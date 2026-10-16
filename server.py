@@ -1,0 +1,28 @@
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("HangUp", json_response=True)
+
+RED_FLAGS = {
+    "arrest threat": ["arrest", "warrant", "cbi", "customs"],
+    "stay on call": ["stay on the call", "video call", "don't hang up"],
+    "secrecy": ["don't tell", "do not tell", "keep this secret"],
+    "move money": ["safe account", "verification account", "transfer"],
+    "credentials": ["otp", "pin", "remote access", "anydesk"],
+}
+
+@mcp.tool()
+def assess_scam_call(description: str) -> dict:
+    """Check a caller's description for known scam red flags."""
+    text = description.lower()
+    hits = [name for name, words in RED_FLAGS.items()
+            if any(w in text for w in words)]
+    risk = "high" if len(hits) >= 2 else "medium" if hits else "low"
+    if hits:
+        advice = "Hang up. Do not send money. Call 1930."
+    else:
+        advice = ("No clear red flags found. If anyone pressures you "
+                  "for money, hang up and call 1930.")
+    return {"risk": risk, "red_flags": hits, "advice": advice}
+
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")
