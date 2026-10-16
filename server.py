@@ -51,5 +51,51 @@ def log_incident(caller_claim: str, amount_lost: int = 0, notes: str = "") -> di
     INCIDENTS_FILE.write_text(json.dumps(incidents, indent=2), encoding="utf-8")
     return incident
 
+ALERTS_FILE = Path("alerts.json")
+
+
+@mcp.tool()
+def draft_complaint_summary(incident_id: str) -> dict:
+    """Write a short summary of a logged incident, ready for reporting."""
+    for item in load_incidents():
+        if item["id"] == incident_id:
+            lines = [
+                f"Incident ID: {item['id']}",
+                f"Date and time: {item['time']}",
+                f"What the caller claimed: {item['caller_claim']}",
+                f"Amount lost (INR): {item['amount_lost']}",
+                f"Notes: {item['notes'] or 'None'}",
+            ]
+            return {
+                "summary": "\n".join(lines),
+                "next_steps": [
+                    "Call 1930 as soon as possible, especially if money was sent.",
+                    "Tell your bank immediately.",
+                    "Report online at cybercrime.gov.in.",
+                    "Keep screenshots, phone numbers and payment receipts.",
+                ],
+            }
+    return {"error": "No incident found with that id."}
+
+
+@mcp.tool()
+def alert_trusted_contact(contact_name: str, message: str) -> dict:
+    """Simulated alert to a trusted family member. Demo only, nothing is sent."""
+    alerts = []
+    if ALERTS_FILE.exists():
+        alerts = json.loads(ALERTS_FILE.read_text(encoding="utf-8"))
+    alert = {
+        "time": datetime.now().isoformat(timespec="seconds"),
+        "to": contact_name,
+        "message": message,
+    }
+    alerts.append(alert)
+    ALERTS_FILE.write_text(json.dumps(alerts, indent=2), encoding="utf-8")
+    return {
+        "status": "simulated",
+        "note": "Demo only: no real message was sent.",
+        "alert": alert,
+    }
+
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
