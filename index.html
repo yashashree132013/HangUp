@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HangUp: simulated Alexa+ demo</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #12161c; color: #e8eaed;
+         max-width: 760px; margin: 0 auto; padding: 16px; }
+  .banner { background: #3a2f12; border: 1px solid #8a6d1d; padding: 8px 12px;
+            border-radius: 8px; font-size: 14px; }
+  #log { background: #1b212b; border-radius: 10px; padding: 12px; height: 280px;
+         overflow-y: auto; margin: 12px 0; }
+  .msg { margin: 8px 0; line-height: 1.4; }
+  .you { color: #8ab4f8; }
+  .bot { color: #81c995; }
+  .row { display: flex; gap: 8px; }
+  input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #3c4452;
+          background: #0f1318; color: #e8eaed; font-size: 16px; }
+  button { padding: 10px 16px; border-radius: 8px; border: 0; cursor: pointer;
+           background: #3b6fd6; color: white; font-size: 16px; }
+  #mic { background: #c0392b; }
+  #mic.listening { background: #e67e22; }
+  pre { background: #0f1318; padding: 10px; border-radius: 8px; overflow-x: auto;
+        font-size: 12px; white-space: pre-wrap; }
+  h3 { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+  <h1>HangUp</h1>
+  <div class="banner">Simulated Alexa+ demo. No real calls or messages are
+  sent. This is not an official service. In India, call 1930 to report
+  cyber fraud.</div>
+
+  <div id="log"></div>
+
+  <div class="row">
+    <button id="mic">Hold the idea: tap to speak</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input id="box" placeholder="Or type what the caller said...">
+    <button id="send">Send</button>
+  </div>
+
+  <h3>Tools called (MCP)</h3>
+  <pre id="tools">Nothing yet.</pre>
+
+<script>
+const log = document.getElementById("log");
+const toolsBox = document.getElementById("tools");
+const box = document.getElementById("box");
+
+function add(who, text) {
+  const div = document.createElement("div");
+  div.className = "msg " + (who === "You" ? "you" : "bot");
+  div.textContent = who + ": " + text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function speak(text) {
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "en-IN";
+  window.speechSynthesis.speak(u);
+}
+
+async function send(text) {
+  text = text.trim();
+  if (!text) return;
+  add("You", text);
+  box.value = "";
+  try {
+    const res = await fetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text }),
+    });
+    const data = await res.json();
+    add("HangUp", data.reply);
+    speak(data.reply);
+    toolsBox.textContent = data.tools.length
+      ? JSON.stringify(data.tools, null, 2)
+      : (data.error || "No tools called.");
+  } catch (err) {
+    add("HangUp", "Could not reach the helper program (host.py).");
+  }
+}
+
+document.getElementById("send").onclick = () => send(box.value);
+box.addEventListener("keydown", (e) => { if (e.key === "Enter") send(box.value); });
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const mic = document.getElementById("mic");
+mic.textContent = "Tap to speak";
+if (!SR) {
+  mic.disabled = true;
+  mic.textContent = "Mic not supported: use Chrome or type";
+} else {
+  const rec = new SR();
+  rec.lang = "en-IN";
+  rec.interimResults = false;
+  rec.onstart = () => { mic.classList.add("listening"); mic.textContent = "Listening..."; };
+  rec.onend = () => { mic.classList.remove("listening"); mic.textContent = "Tap to speak"; };
+  rec.onresult = (e) => send(e.results[0][0].transcript);
+  rec.onerror = () => add("HangUp", "I could not hear you. Please try again or type.");
+  mic.onclick = () => rec.start();
+}
+
+add("HangUp", "Hello. Tell me what the caller said, and I will check it for scam warning signs.");
+</script>
+</body>
+</html>

@@ -1,33 +1,65 @@
-from mcp.server.fastmcp import FastMCP
 import json
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from mcp.server.fastmcp import FastMCP
+
 mcp = FastMCP("HangUp", json_response=True)
 
 RED_FLAGS = {
-    "arrest threat": ["arrest", "warrant", "cbi", "customs"],
-    "stay on call": ["stay on the call", "video call", "don't hang up"],
-    "secrecy": ["don't tell", "do not tell", "keep this secret"],
+    "arrest threat": ["arrest", "arrested", "warrant", "cbi", "customs",
+                      "digital arrest", "police"],
+    "stay on call": ["stay on the call", "stay on the video call",
+                     "video call", "don't hang up"],
+    "secrecy": ["don't tell", "do not tell", "keep this secret",
+                "tell no one"],
     "move money": ["safe account", "verification account", "transfer"],
     "credentials": ["otp", "pin", "remote access", "anydesk"],
+    "parcel or kyc pretext": ["parcel", "courier", "kyc", "narcotics",
+                              "drugs", "aadhaar", "trai"],
 }
+
+PAID_PHRASES = ["already paid", "i paid", "sent money", "i sent",
+                "i transferred", "already transferred"]
+
+
+def has_phrase(text: str, phrase: str) -> bool:
+    return re.search(r"\b" + re.escape(phrase) + r"\b", text) is not None
+
 
 @mcp.tool()
 def assess_scam_call(description: str) -> dict:
     """Check a caller's description for known scam red flags."""
-    text = description.lower()
-    hits = [name for name, words in RED_FLAGS.items()
-            if any(w in text for w in words)]
-    risk = "high" if len(hits) >= 2 else "medium" if hits else "low"
-    if hits:
-        advice = "Hang up. Do not send money. Call 1930."
+    text = description.lower().replace("\u2019", "'")
+    hits = [name for name, phrases in RED_FLAGS.items()
+            if any(has_phrase(text, p) for p in phrases)]
+    already_paid = any(has_phrase(text, p) for p in PAID_PHRASES)
+
+    if len(hits) >= 2 or (hits and already_paid):
+        risk = "high"
+    elif hits:
+        risk = "medium"
     else:
-        advice = ("No clear red flags found. If anyone pressures you "
+        risk = "low"
+
+    if already_paid:
+        advice = ("Do not send any more money. Call 1930 and your bank "
+                  "right now, and keep your payment receipts.")
+    elif hits:
+        advice = ("Hang up. Do not send money or share any OTP or PIN. "
+                  "Real police do not arrest people over a video call. "
+                  "If you are unsure, call 1930.")
+    else:
+        advice = ("I found no clear red flags. If anyone pressures you "
                   "for money, hang up and call 1930.")
-    return {"risk": risk, "red_flags": hits, "advice": advice}
+    return {"risk": risk, "red_flags": hits,
+            "already_paid": already_paid, "advice": advice}
+
 
 INCIDENTS_FILE = Path("incidents.json")
+ALERTS_FILE = Path("alerts.json")
 
 
 def load_incidents() -> list:
@@ -50,8 +82,6 @@ def log_incident(caller_claim: str, amount_lost: int = 0, notes: str = "") -> di
     incidents.append(incident)
     INCIDENTS_FILE.write_text(json.dumps(incidents, indent=2), encoding="utf-8")
     return incident
-
-ALERTS_FILE = Path("alerts.json")
 
 
 @mcp.tool()
@@ -96,6 +126,7 @@ def alert_trusted_contact(contact_name: str, message: str) -> dict:
         "note": "Demo only: no real message was sent.",
         "alert": alert,
     }
+
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
